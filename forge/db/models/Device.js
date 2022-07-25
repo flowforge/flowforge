@@ -48,6 +48,12 @@ module.exports = {
                         DeviceId: device.id
                     }
                 })
+                await M.BrokerClient.destroy({
+                    where: {
+                        ownerType: 'device',
+                        ownerId: '' + device.id
+                    }
+                })
             }
         }
     },
@@ -59,9 +65,11 @@ module.exports = {
                     const credentialSecret = crypto.randomBytes(32).toString('hex')
                     this.credentialSecret = credentialSecret
                     await this.save()
+                    const deviceBrokerCredentials = await Controllers.BrokerClient.createClientForDevice(this)
                     return {
                         token: accessToken.token,
-                        credentialSecret
+                        credentialSecret,
+                        broker: deviceBrokerCredentials
                     }
                 },
                 async getAccessToken () {
@@ -147,6 +155,25 @@ module.exports = {
                         ]
                     })
                 },
+                byProject: async (projectId) => {
+                    return this.findAll({
+                        include: [
+                            {
+                                model: M.Team,
+                                attributes: ['hashid', 'id', 'name', 'slug', 'links']
+                            },
+                            {
+                                model: M.Project,
+                                where: {
+                                    id: projectId
+                                },
+                                attributes: ['id', 'name', 'links']
+                            },
+                            { model: M.ProjectSnapshot, as: 'targetSnapshot', attributes: ['id', 'hashid', 'name'] },
+                            { model: M.ProjectSnapshot, as: 'activeSnapshot', attributes: ['id', 'hashid', 'name'] }
+                        ]
+                    })
+                },
                 getAll: async (pagination = {}, where = {}) => {
                     const limit = parseInt(pagination.limit) || 30
                     if (pagination.cursor) {
@@ -175,6 +202,44 @@ module.exports = {
                         },
                         count: count,
                         devices: rows
+                    }
+                },
+                byTargetSnapshot: async (snapshotHashId) => {
+                    const snapshotId = M.ProjectSnapshot.decodeHashid(snapshotHashId)
+                    return this.findAll({
+                        include: [
+                            {
+                                model: M.Team,
+                                attributes: ['hashid', 'id', 'name', 'slug', 'links']
+                            },
+                            {
+                                model: M.Project,
+                                attributes: ['id', 'name', 'links']
+                            },
+                            {
+                                model: M.ProjectSnapshot,
+                                as: 'targetSnapshot',
+                                attributes: ['id', 'hashid', 'name'],
+                                where: {
+                                    id: snapshotId
+                                }
+                            },
+                            { model: M.ProjectSnapshot, as: 'activeSnapshot', attributes: ['id', 'hashid', 'name'] }
+                        ]
+                    })
+                },
+                getDeviceProjectId: async (id) => {
+                    if (typeof id === 'string') {
+                        id = M.Device.decodeHashid(id)
+                    }
+                    const device = await this.findOne({
+                        where: { id: id },
+                        attributes: [
+                            'ProjectId'
+                        ]
+                    })
+                    if (device) {
+                        return device.ProjectId
                     }
                 }
             }
